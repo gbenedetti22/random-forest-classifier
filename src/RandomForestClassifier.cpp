@@ -15,6 +15,7 @@
 #include <spdlog/spdlog.h>
 #include <random>
 #include <span>
+#include "pbar.hpp"
 
 
 using namespace std;
@@ -79,8 +80,6 @@ void RandomForestClassifier::fit(vector<float> &X, const vector<int> &y, pair<si
         }
     }
 
-    Logger::info("Number of samples used: {} / {}\n", n_samples, shape.first);
-
     const DTreeParams dtp(
         params.split_criteria,
         params.min_samples_split,
@@ -96,12 +95,10 @@ void RandomForestClassifier::fit(vector<float> &X, const vector<int> &y, pair<si
     }
 
     int chunks = std::max(1, num_trees / (threads_count * 4));
+    auto bar = pbar::ProgressBar(num_trees);
 
     #pragma omp parallel for schedule(dynamic, chunks) num_threads(threads_count)
     for (int i = 0; i < num_trees; i++) {
-        Logger::info("Thread {} / {} : Training tree n. {}", omp_get_thread_num() + 1, omp_get_num_threads(),
-                          i + 1);
-
         vector<int> indices(n_samples);
         if (params.bootstrap) {
             bootstrap_sample(n_samples, shape.first, indices);
@@ -111,7 +108,11 @@ void RandomForestClassifier::fit(vector<float> &X, const vector<int> &y, pair<si
             iota(indices.begin(), indices.end(), 0);
             trees[i].train(X_train, shape_X_train, y, indices);
         }
+
+        bar.update();
     }
+
+    bar.finish();
 }
 
 vector<int> RandomForestClassifier::predict(const vector<float> &X, const pair<size_t, size_t> &shape) const {
@@ -127,6 +128,8 @@ vector<int> RandomForestClassifier::predict(const vector<float> &X, const pair<s
     int threads_count = std::min(std::abs(njobs * nworkers), omp_get_max_threads());
 
     Logger::info("Using: {} threads for prediction", threads_count);
+    size_t total_tiles = (n_samples + TILE_SAMPLES - 1) / TILE_SAMPLES;
+    auto bar = pbar::ProgressBar(total_tiles);
 
     #pragma omp parallel for collapse(2) num_threads(threads_count)
     for (size_t ii = 0; ii < n_samples; ii += TILE_SAMPLES) {
@@ -144,8 +147,13 @@ vector<int> RandomForestClassifier::predict(const vector<float> &X, const pair<s
                     all_votes[i * num_classes + pred]++;
                 }
             }
+
+            if (tt + TILE_TREES >= trees.size()) {
+                bar.update(i_max - ii);
+            }
         }
     }
+    bar.finish();
 
     vector predictions(n_samples, 0);
 

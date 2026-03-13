@@ -16,7 +16,6 @@ add_library(libs
         src/RandomForestClassifier.cpp
         src/DecisionTreeClassifier.cpp
         src/Timer.cpp
-        include/splitters/SplitterFF.hpp
         include/splitters/SplitterMP.hpp
 )
 
@@ -31,9 +30,6 @@ target_link_libraries(libs PUBLIC TBB::tbb)
 
 add_executable(main main.cpp)
 target_link_libraries(main PRIVATE libs)
-
-add_executable(mpi main_mpi.cpp)
-target_link_libraries(mpi PRIVATE libs)
 
 if(MPI_FOUND)
     message(STATUS "MPI found: ${MPI_C_COMPILER}")
